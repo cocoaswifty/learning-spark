@@ -151,7 +151,6 @@ GrettingToJoe("Hi")
 
 
 
-
 def isInRange(from: Int, to: Int)(point: Int) = {	//currying的一般化函式，接收兩個參數(from: Int, to: Int)(point: Int)
 		if (point >= from && point <= to) true
 		else false
@@ -165,6 +164,158 @@ isFiveInRange(0, 10)
 isFiveInRange(50, 100)
 
 
+//MARK:Day11 - 聚合函數-1
+val nums = sc.parallelize(List(1,2,3,4,5,6))  //定義一個簡單的RDD
+val (sum,num) = nums.aggregate((0,0)) (       //zero value:在此為(0,0)的KV
+  (acc,number) => (acc._1 + number, acc._2 + 1), 
+  (par1,par2) => (par1._1 + par2._1, par1._2 + par2._2)
+  )
+  
+/* (0,0)=>(0+1,0+1)=(1,1)
+ * (1,1)=>(1+2,1+1)=(3,2)
+ * (3,2)=>(3+3,2+1)=(6,3)
+ * (6,3)=>(6+4,3+1)=(10,4)
+ * (10,4)=>(10+5,4+1)=(15,5)
+ * (15+6,5+1)=(21,1)
+ */ 
 
+
+var data = sc.parallelize(List(1,2,3,4,5,6), 3)   //定義一個3個分區的RDD
+
+def printPartitionInfo(index: Int, iter: Iterator[(Int)]) : Iterator[Int] = {
+  println("---------------[partID:" +  index + ", val: " + iter.toList + "]")
+  iter
+}
+
+def interPartition(a:Int, b:Int) : Int = {a * b}  //簡單的疊乘（同區）
+def crossPartition(a:Int, b:Int) : Int = {a + b}  //簡單的疊加 (跨區)
+
+data.aggregate(10)(interPartition,crossPartition) //zero value為10
+/*
+  分區0:(1,2)=>1012=20
+  分區1:(3,4)=>1034=120
+  分區2:(5,6)=>1056=300
+  分區0,1,2=>10+20+120+300=450
+*/
+
+
+
+//MARK:Day12 - 聚合函數-2
+var data = sc.parallelize(List((1,3),(1,2),(1, 4),(2,3),(2,10),(3,6)))  //定義一個簡單的pairRDD
+
+data.aggregateByKey((0,0))(   //zero value:在此為(0,0)的KV，後面以currying的方式接第二組參數
+      (acc,value) => (acc._1+value,acc._2+1), //SeqOp: 同一個partition且同一個key中疊加數據，前為總和，後為數量
+      (acc1,acc2)=>(acc1._1+acc2._1,acc1._2+acc2._2)).collect //Combiner疊加每個partition
+
+
+//想要一條龍直接得到平均可以再後面加個mapValues進行處理：
+data.aggregateByKey((0,0))( 
+            (acc,value) => (acc._1+value,acc._2+1), 
+            (acc1,acc2)=>(acc1._1+acc2._1,acc1._2+acc2._2)).
+            mapValues(sumCount=> 1.0* sumCount._1/sumCount._2).
+            collect
+
+
+val data = sc.parallelize(List(1,2,3,4,5,6))
+data.fold(0)((x,y)=>(x+y))
+data.fold(0)(_+_)
+data.fold(10)(_+_)
+
+
+var data = sc.parallelize(List((1,3),(1,2),(1, 4),(2,3),(2,10),(3,6)))
+data.foldByKey(0)(math.max(_,_)).collect
+data.foldByKey(5)(math.max(_,_)).collect
+
+
+val data = sc.parallelize(List(1,2,3,4,5,6))
+data.reduce(_+_)
+
+
+val words = Array("one", "two", "two", "three", "three", "three")
+val wordPairsRDD = sc.parallelize(words).map(word => (word, 1))
+val wordsCountWithReduce = wordPairsRDD.reduceByKey(_ + _).collect()
+
+
+val data = sc.parallelize(List(1,2,3,4,5,6,6,6,6))
+data.groupBy(x=>x).collect
+
+wordPairsRDD.groupByKey.collect
+val wordsCountWithGroup = wordPairsRDD.
+      groupByKey().
+      map(w => (w._1, w._2.sum)).
+      collect()
+
+
+
+//MARK:Day13 - Partition
+val transFile= sc.textFile("data_transactions.txt")
+val transData = transFile.map(_.split("#"))
+var transByCust = transData.map(tran => (tran(2).toInt,tran))
+
+
+val prods = transByCust.aggregateByKey(List[String]())(  
+          (prods, tran) => prods ::: List(tran(3)),
+          (prods1, prods2) => prods1 ::: prods2
+      )
+
+prods.collect
+
+List(1,2,3):::List(4,5,6)
+List(1,2,3):+4
+4+:List(1,2,3)
+val testList = 4::List(1,2,3)
+
+testList.head
+testList.tail
+testList.head::testList.tail
+
+val list = sc.parallelize(1 to 10)
+list.partitions.size
+list.getNumPartitions
+
+val list = sc.parallelize(1 to 10,5)
+list.getNumPartitions
+
+val list2 = list.map(_+1)
+list2.getNumPartitions
+
+
+
+val prods = transByCust.aggregateByKey(List[String]())(  
+          (prods, tran) => prods ::: List(tran(3)), ①
+          (prods1, prods2) => prods1 ::: prods2 ②
+      )
+
+
+val data = list.map(x =>(x,x*x)).reduceByKey(_+_).collect
+
+
+val nums = sc.parallelize(1 to 1000000,100)
+
+nums.getNumPartitions
+
+val filted = nums.filter(_>999990)
+
+filted.collect
+
+filted.getNumPartitions
+
+val smallfilted=filted.coalesce(2)
+
+smallfilted.getNumPartitions
+
+val bigfilted=smallfilted.coalesce(10)
+
+bigfilted.getNumPartitions
+
+val bigfilted=smallfilted.coalesce(10,true)
+
+bigfilted.getNumPartitions
+
+val list =List.fill(500)(scala.util.Random.nextInt(100))
+
+val rdd =sc.parallelize(list,30)
+
+rdd.glom.collect
 
 
